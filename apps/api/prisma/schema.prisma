@@ -1,0 +1,216 @@
+// Prisma schema for AI Knowledge Hub
+// Supporting Multi-tenancy, Document Ingestion, and RAG Citations
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [pgvector(map: "vector")]
+}
+
+// ----------------------------------------------------
+// ENUMS
+// ----------------------------------------------------
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum FileType {
+  PDF
+  DOCX
+  TXT
+}
+
+enum SenderType {
+  USER
+  ASSISTANT
+}
+
+// ----------------------------------------------------
+// MODELS
+// ----------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  fullName     String   @map("full_name")
+  avatarUrl    String?  @map("avatar_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  refreshTokens     RefreshToken[]
+  ownedWorkspaces   Workspace[]       @relation("WorkspaceOwner")
+  workspaceMembers  WorkspaceMember[]
+  uploadedDocuments Document[]        @relation("DocumentUploader")
+  conversations     Conversation[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Workspace {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  ownerId     String   @map("owner_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  owner          User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members        WorkspaceMember[]
+  documents      Document[]
+  documentChunks DocumentChunk[]
+  conversations  Conversation[]
+
+  @@index([ownerId])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String   @id @default(uuid())
+  workspaceId String   @map("workspace_id")
+  userId      String   @map("user_id")
+  role        Role     @default(MEMBER)
+  joinedAt    DateTime @default(now()) @map("joined_at")
+
+  // Relationships
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+model Document {
+  id           String         @id @default(uuid())
+  workspaceId  String         @map("workspace_id")
+  title        String
+  originalName String         @map("original_name")
+  storagePath  String         @map("storage_path")
+  fileType     FileType       @map("file_type")
+  fileSize     Int            @map("file_size")
+  mimeType     String         @map("mime_type")
+  status       DocumentStatus @default(PENDING)
+  errorMessage String?        @map("error_message")
+  createdById  String         @map("created_by_id")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  // Relationships
+  workspace      Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy      User             @relation("DocumentUploader", fields: [createdById], references: [id])
+  chunks         DocumentChunk[]
+  messageSources MessageSource[]
+
+  @@index([workspaceId])
+  @@index([status])
+  @@map("documents")
+}
+
+model DocumentChunk {
+  id          String   @id @default(uuid())
+  documentId  String   @map("document_id")
+  workspaceId String   @map("workspace_id")
+  content     String   @db.Text
+  pageNumber  Int?     @map("page_number")
+  chunkIndex  Int      @map("chunk_index")
+  metadata    Json?
+  // PostgreSQL pgvector column for semantic embeddings
+  embedding   Unsupported("vector(1536)")?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  document       Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messageSources MessageSource[]
+
+  @@index([workspaceId])
+  @@index([documentId])
+  @@map("document_chunks")
+}
+
+model Conversation {
+  id          String   @id @default(uuid())
+  workspaceId String   @map("workspace_id")
+  title       String
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdById], references: [id])
+  messages  Message[]
+
+  @@index([workspaceId])
+  @@index([createdById])
+  @@map("conversations")
+}
+
+model Message {
+  id             String     @id @default(uuid())
+  conversationId String     @map("conversation_id")
+  senderType     SenderType @map("sender_type")
+  content        String     @db.Text
+  createdAt      DateTime   @default(now()) @map("created_at")
+
+  // Relationships
+  conversation Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sources      MessageSource[]
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model MessageSource {
+  id             String   @id @default(uuid())
+  messageId      String   @map("message_id")
+  documentId     String   @map("document_id")
+  chunkId        String?  @map("chunk_id")
+  pageNumber     Int?     @map("page_number")
+  excerpt        String   @db.Text
+  relevanceScore Float?   @map("relevance_score")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  message  Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  document Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunk    DocumentChunk? @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([documentId])
+  @@map("message_sources")
+}
+
