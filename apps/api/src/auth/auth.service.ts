@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { UsersService, type UserWithoutPassword } from '../users/users.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RegisterDto } from './dto/register.dto.js';
@@ -157,16 +158,20 @@ export class AuthService {
     email: string,
   ): Promise<AuthTokens> {
     const payload: JwtPayload = { sub: userId, email };
+    const jti = randomUUID();
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.jwtAccessSecret,
         expiresIn: this.accessExpiresIn as unknown as number,
       }),
-      this.jwtService.signAsync(payload, {
-        secret: this.jwtRefreshSecret,
-        expiresIn: this.refreshExpiresIn as unknown as number,
-      }),
+      this.jwtService.signAsync(
+        { ...payload, jti },
+        {
+          secret: this.jwtRefreshSecret,
+          expiresIn: this.refreshExpiresIn as unknown as number,
+        },
+      ),
     ]);
 
     // Thời gian hết hạn của refresh token: 7 ngày

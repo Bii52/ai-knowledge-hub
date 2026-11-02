@@ -22,15 +22,26 @@ export class StorageService implements OnModuleInit {
   private readonly bucketName: string;
 
   constructor(private readonly configService: ConfigService) {
-    const endpointHost =
-      this.configService.get<string>('STORAGE_ENDPOINT') ?? 'localhost';
-    const endpointPort = this.configService.get<string>('STORAGE_PORT') ?? '9000';
-    const useSsl =
-      this.configService.get<string>('STORAGE_USE_SSL') === 'true';
+    // Supabase Storage / MinIO: hỗ trợ cả full URL và host+port riêng lẻ
+    const endpointUrl = this.configService.get<string>('STORAGE_ENDPOINT_URL');
+    let endpoint: string;
 
-    const protocol = useSsl ? 'https' : 'http';
-    const endpoint = `${protocol}://${endpointHost}:${endpointPort}`;
+    if (endpointUrl) {
+      // Ưu tiên full URL (dành cho Supabase Storage S3)
+      endpoint = endpointUrl;
+    } else {
+      const endpointHost =
+        this.configService.get<string>('STORAGE_ENDPOINT') ?? 'localhost';
+      const endpointPort =
+        this.configService.get<string>('STORAGE_PORT') ?? '9000';
+      const useSsl =
+        this.configService.get<string>('STORAGE_USE_SSL') === 'true';
+      const protocol = useSsl ? 'https' : 'http';
+      endpoint = `${protocol}://${endpointHost}:${endpointPort}`;
+    }
 
+    const region =
+      this.configService.get<string>('STORAGE_REGION') ?? 'us-east-1';
     const accessKeyId =
       this.configService.get<string>('STORAGE_ACCESS_KEY') ?? 'minioadmin';
     const secretAccessKey =
@@ -42,12 +53,12 @@ export class StorageService implements OnModuleInit {
 
     this.s3Client = new S3Client({
       endpoint,
-      region: 'us-east-1',
+      region,
       credentials: {
         accessKeyId,
         secretAccessKey,
       },
-      forcePathStyle: true, // Required for MinIO
+      forcePathStyle: true, // Required for MinIO & Supabase Storage S3
     });
   }
 

@@ -15,6 +15,7 @@ import { DocumentIngestionProcessor } from './document-ingestion.processor.js';
         const host = configService.get<string>('REDIS_HOST') ?? 'localhost';
         const port = Number(configService.get<number>('REDIS_PORT') ?? 6379);
         const password = configService.get<string>('REDIS_PASSWORD') || undefined;
+        const isTls = configService.get<string>('REDIS_TLS') === 'true';
 
         return {
           connection: {
@@ -23,6 +24,8 @@ import { DocumentIngestionProcessor } from './document-ingestion.processor.js';
             password,
             maxRetriesPerRequest: null,
             enableReadyCheck: false,
+            // Bật TLS khi kết nối Upstash Cloud (yêu cầu bắt buộc)
+            ...(isTls ? { tls: {} } : {}),
           },
         };
       },
