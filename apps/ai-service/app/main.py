@@ -4,6 +4,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
+from app.core.database import close_db_pool, init_db_pool
 
 # Configure logging
 logging.basicConfig(
@@ -22,9 +23,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Environment: {settings.ENVIRONMENT} | Port: {settings.PORT}")
     logger.info(f"Embedding Model: {settings.EMBEDDING_MODEL} (dim: {settings.EMBEDDING_DIMENSION})")
 
+    # Initialize database pool if configured
+    if settings.DATABASE_URL:
+        try:
+            await init_db_pool()
+            logger.info("Connected to PostgreSQL + pgvector successfully.")
+        except Exception as e:
+            logger.warning("Could not pre-initialize database pool at startup: %s", e)
+
     yield
 
     logger.info("Shutting down AI Core Service cleanly...")
+    await close_db_pool()
 
 
 # Initialize FastAPI application
