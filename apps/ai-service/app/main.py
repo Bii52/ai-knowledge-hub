@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.v1.ingest import router as ingest_router
+from app.api.v1.query import router as query_router
 from app.core.config import get_settings
 from app.core.database import close_db_pool, init_db_pool
 
@@ -55,6 +57,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register API routers
+app.include_router(ingest_router, prefix="/api/v1")
+app.include_router(query_router, prefix="/api/v1")
 
 
 @app.get(
